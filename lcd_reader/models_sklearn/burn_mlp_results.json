@@ -1,0 +1,22 @@
+{
+  "task": "burn",
+  "train_acc": 0.9995104552765928,
+  "val_acc": 1.0,
+  "test_acc": 1.0,
+  "num_classes": 2,
+  "class_names": [
+    0,
+    1
+  ],
+  "train_samples": 14299,
+  "val_samples": 93,
+  "test_samples": 94,
+  "class_distribution": {
+    "0": 183,
+    "1": 14116
+  },
+  "class_weights": {
+    "0": 39.068306010928964,
+    "1": 0.5064820062340606
+  }
+}

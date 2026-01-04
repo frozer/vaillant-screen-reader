@@ -1,0 +1,10 @@
+venv
+__pycache__
+source_data
+legacy
+dataset
+results
+extracted_display.jpg
+seg_*.png
+dist
+.claude/

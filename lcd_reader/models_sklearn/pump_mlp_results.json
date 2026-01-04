@@ -1,0 +1,19 @@
+{
+  "task": "pump",
+  "train_acc": 1.0,
+  "val_acc": 1.0,
+  "test_acc": 1.0,
+  "num_classes": 1,
+  "class_names": [
+    1
+  ],
+  "train_samples": 14299,
+  "val_samples": 93,
+  "test_samples": 94,
+  "class_distribution": {
+    "1": 14299
+  },
+  "class_weights": {
+    "1": 1.0
+  }
+}

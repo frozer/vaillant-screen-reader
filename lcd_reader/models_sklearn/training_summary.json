@@ -1,0 +1,183 @@
+{
+  "digit1": {
+    "task": "digit1",
+    "train_acc": 1.0,
+    "val_acc": 1.0,
+    "test_acc": 1.0,
+    "num_classes": 5,
+    "class_names": [
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "train_samples": 14299,
+    "val_samples": 93,
+    "test_samples": 94,
+    "class_distribution": {
+      "4": 6395,
+      "5": 6804,
+      "6": 400,
+      "7": 400,
+      "8": 300
+    },
+    "class_weights": {
+      "4": 0.4471931196247068,
+      "5": 0.42031158142269254,
+      "6": 7.1495,
+      "7": 7.1495,
+      "8": 9.532666666666668
+    }
+  },
+  "digit2": {
+    "task": "digit2",
+    "train_acc": 1.0,
+    "val_acc": 0.9354838709677419,
+    "test_acc": 0.9680851063829787,
+    "num_classes": 10,
+    "class_names": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "train_samples": 14299,
+    "val_samples": 93,
+    "test_samples": 94,
+    "class_distribution": {
+      "0": 1838,
+      "1": 100,
+      "2": 1760,
+      "3": 1860,
+      "4": 1729,
+      "5": 1400,
+      "6": 1768,
+      "7": 1880,
+      "8": 200,
+      "9": 1764
+    },
+    "class_weights": {
+      "0": 0.7779651795429815,
+      "1": 14.299,
+      "2": 0.8124431818181819,
+      "3": 0.7687634408602151,
+      "4": 0.8270098322729902,
+      "5": 1.0213571428571429,
+      "6": 0.8087669683257919,
+      "7": 0.7605851063829787,
+      "8": 7.1495,
+      "9": 0.8106009070294785
+    }
+  },
+  "burn": {
+    "task": "burn",
+    "train_acc": 0.9995104552765928,
+    "val_acc": 1.0,
+    "test_acc": 1.0,
+    "num_classes": 2,
+    "class_names": [
+      0,
+      1
+    ],
+    "train_samples": 14299,
+    "val_samples": 93,
+    "test_samples": 94,
+    "class_distribution": {
+      "0": 183,
+      "1": 14116
+    },
+    "class_weights": {
+      "0": 39.068306010928964,
+      "1": 0.5064820062340606
+    }
+  },
+  "heating": {
+    "task": "heating",
+    "train_acc": 1.0,
+    "val_acc": 1.0,
+    "test_acc": 1.0,
+    "num_classes": 1,
+    "class_names": [
+      1
+    ],
+    "train_samples": 14299,
+    "val_samples": 93,
+    "test_samples": 94,
+    "class_distribution": {
+      "1": 14299
+    },
+    "class_weights": {
+      "1": 1.0
+    }
+  },
+  "hotwater": {
+    "task": "hotwater",
+    "train_acc": 1.0,
+    "val_acc": 1.0,
+    "test_acc": 1.0,
+    "num_classes": 2,
+    "class_names": [
+      0,
+      1
+    ],
+    "train_samples": 14299,
+    "val_samples": 93,
+    "test_samples": 94,
+    "class_distribution": {
+      "0": 8875,
+      "1": 5424
+    },
+    "class_weights": {
+      "0": 0.8055774647887324,
+      "1": 1.318123156342183
+    }
+  },
+  "pump": {
+    "task": "pump",
+    "train_acc": 1.0,
+    "val_acc": 1.0,
+    "test_acc": 1.0,
+    "num_classes": 1,
+    "class_names": [
+      1
+    ],
+    "train_samples": 14299,
+    "val_samples": 93,
+    "test_samples": 94,
+    "class_distribution": {
+      "1": 14299
+    },
+    "class_weights": {
+      "1": 1.0
+    }
+  },
+  "gasvalve": {
+    "task": "gasvalve",
+    "train_acc": 1.0,
+    "val_acc": 1.0,
+    "test_acc": 1.0,
+    "num_classes": 2,
+    "class_names": [
+      0,
+      1
+    ],
+    "train_samples": 14299,
+    "val_samples": 93,
+    "test_samples": 94,
+    "class_distribution": {
+      "0": 183,
+      "1": 14116
+    },
+    "class_weights": {
+      "0": 39.068306010928964,
+      "1": 0.5064820062340606
+    }
+  }
+}
