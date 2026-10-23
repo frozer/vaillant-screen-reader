@@ -34,7 +34,11 @@ def load_dataset(root_dir, task_name):
         if not class_dir.is_dir():
             continue
 
-        class_label = int(class_dir.name)
+        name = class_dir.name
+        try:
+            class_label = int(name)
+        except ValueError:
+            class_label = name  # string label (e.g. screen_state: ok/off/unreadable)
         if class_label not in class_names:
             class_names.append(class_label)
 
@@ -213,6 +217,11 @@ def train_all_tasks(dataset_root='dataset', output_dir='models_sklearn'):
     """Train all 7 tasks"""
 
     tasks = ['digit1', 'digit2', 'burn', 'heating', 'hotwater', 'pump', 'gasvalve']
+
+    # Train the optional screen-state gate only if its dataset exists, so
+    # older datasets without it still train cleanly.
+    if (Path(dataset_root) / 'train' / 'screen_state').exists():
+        tasks.append('screen_state')
 
     all_results = {}
 

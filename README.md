@@ -12,6 +12,10 @@ Computer vision system that reads Vaillant heater LCD displays from camera snaps
 - **Fast inference** - under 10ms per image (~1000 images/sec)
 - **JSON output mode** - single-line JSON for easy bash/script integration
 - **Automatic image validation** - rejects black, overexposed, or corrupted images
+- **Screen-state gate** *(optional)* - a learned model that, when present, classifies each
+  image as `ok`, `off` (screen blank/standby), or `unreadable` (dark/blur/glare/corrupt)
+  before reading, so the digit models never fabricate a temperature for a blank or
+  unreadable display
 
 ## Quick Start
 
@@ -66,8 +70,19 @@ python motion_reader.py --filename path/to/image.jpg
 ```
 
 ```json
-{"temperature":47,"isGasBurning":true,"isHeating":true,"isHotWater":true,"isInternalPumpRunning":true,"isGasValveOpened":true}
+{"screenState":"ok","temperature":47,"isGasBurning":true,"isHeating":true,"isHotWater":true,"isInternalPumpRunning":true,"isGasValveOpened":true}
 ```
+
+When the screen-state gate is active and detects a blank or unreadable screen, the wrapper
+emits a success result with `screenState` set and `temperature: null`:
+
+```json
+{"screenState":"off","temperature":null,"isGasBurning":false,"isHeating":false,"isHotWater":false,"isInternalPumpRunning":false,"isGasValveOpened":false}
+```
+
+The `screenState` field is additive: downstream consumers gain a `screenState` value
+(`ok`/`off`/`unreadable`) and must tolerate `temperature: null` when the screen is
+off/unreadable.
 
 Exit codes: `0` = success, `1` = error. See [MOTION_INTEGRATION.md](MOTION_INTEGRATION.md) for full documentation.
 
@@ -96,7 +111,22 @@ Result format:
     'hotwater': {'state': True, 'confidence': 1.0},
     'pump':     {'state': True, 'confidence': 1.0},
     'gasvalve': {'state': True, 'confidence': 1.0},
-    'success': True
+    'success': True,
+    'screen_state': 'ok'        # present only when the gate model is loaded
+}
+```
+
+When the gate is loaded and detects a non-readable screen, `read_lcd()` short-circuits
+and returns `temperature`, the digits, and all icons as `None`:
+
+```python
+{
+    'success': True,
+    'screen_state': 'off',      # or 'unreadable'
+    'confidence': 0.98,
+    'temperature': None,
+    'digit1': None, 'digit2': None,
+    'burn': None, 'heating': None, 'hotwater': None, 'pump': None, 'gasvalve': None
 }
 ```
 
@@ -128,6 +158,13 @@ The system uses a 3-stage pipeline:
 1. **LCD Detection** - Locates the LCD region using dual Canny edge detection with multi-criteria scoring and expected-position fallback
 2. **Region Extraction** - Extracts 7 regions from the detected LCD using percentage-based layout: digit1 (tens), digit2 (ones), burn, heating, hotwater, pump, gasvalve
 3. **Classification** - 7 independent scikit-learn MLP models (512-256-128 neurons each) classify each extracted region
+
+When the optional **screen-state gate** model (`screen_state_mlp.pkl`) is present, an 8th
+model runs *before* the 7 task models: it resizes the detected LCD crop to 64×64 grayscale
+and classifies the screen as `ok`, `off`, or `unreadable`. On `off`/`unreadable` the
+pipeline short-circuits and reports the state instead of reading digits. With the gate
+loaded it also becomes the single owner of "dark/blank" detection (the brightness/contrast
+floor in `validate_image` is disabled). Until the model file exists, behavior is unchanged.
 
 Models are stored as `.pkl` files in `lcd_reader/models_sklearn/` (~350 MB total).
 
@@ -161,7 +198,11 @@ To improve accuracy or add support for new temperature ranges:
 ```bash
 python generate_training_csv.py --source-dir path/to/new/images --output new_labels.csv
 ```
-Manually verify the CSV, then merge into `source_data/training_set_v3.csv`.
+The CSV uses 9 columns ending in `SourceDir;ScreenState`. The `ScreenState` column encodes
+the screen state: empty or `ok` = a normal reading, `off` = screen blank/standby,
+`unreadable` = too dark/blur/glare/corrupt. `off`/`unreadable` rows keep Temperature and
+icon columns blank. If the gate model exists it fills `ScreenState` automatically; otherwise
+fill it by hand. Manually verify the CSV, then merge into `source_data/training_set_v3.csv`.
 
 **2. Regenerate the dataset**
 ```bash
@@ -197,7 +238,7 @@ Training takes ~25 minutes for all 7 tasks on CPU. See [lcd_reader/README.md](lc
 - **Temperature range**: Trained on 42-81 C; may not generalize outside this range
 - **Icon bias**: Heating and Pump icons are always ON in training data (no OFF examples exist)
 - **Rare digits**: Some digit classes have very few training samples and may be confused with similar digits
-- **Dark images**: ~30% of camera snapshots are pitch-black (LCD off / camera in dark) and are automatically rejected
+- **Dark images**: ~30% of camera snapshots are pitch-black (LCD off / camera in dark) and are automatically rejected. With the screen-state gate loaded these (and blank/blurry/glare frames) are instead reported as `off`/`unreadable`
 - **Display detection**: Requires the LCD border to be visible for edge-based detection; falls back to expected-position crop otherwise
 
 ## License

@@ -17,7 +17,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / 'lcd_reader'))
 
-from lcd_reader.lcd_segmentation_full import extract_all_regions
+from lcd_reader.lcd_segmentation_full import (
+    extract_all_regions,
+    extract_screen_state_input,
+)
 
 def load_training_set(csv_path=None):
     if csv_path is None:
@@ -37,7 +40,7 @@ def load_training_set(csv_path=None):
             if not row.get('Temperature', '').strip():
                 continue
 
-            source_dir = row.get('SourceDir', 'source_data').strip()
+            source_dir = (row.get('SourceDir') or 'source_data').strip() or 'source_data'
             sample = {
                 'filename': row['Filename'],
                 'path': f"{source_dir}/{row['Filename']}",
@@ -53,6 +56,188 @@ def load_training_set(csv_path=None):
             samples.append(sample)
 
     return samples
+
+
+def load_screen_state_samples(csv_path=None):
+    """Load screen-state samples grouped by class.
+
+    Returns:
+        Tuple (ok, off, unreadable) of file-path lists.
+        - ok          = rows with a non-empty Temperature (readable display).
+        - off         = rows with ScreenState == 'off'.
+        - unreadable  = rows with ScreenState in {unreadable, dark, toodark}
+                        (tolerant of legacy spellings).
+        Rows with empty Temperature AND empty/unknown state are unlabeled and
+        skipped.
+    """
+    if csv_path is None:
+        csv_path = str(PROJECT_ROOT / 'source_data' / 'training_set_v3.csv')
+
+    ok, off, unreadable = [], [], []
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f, delimiter=';')
+        for row in reader:
+            if not row.get('Filename'):
+                continue
+
+            source_dir = (row.get('SourceDir') or 'source_data').strip() or 'source_data'
+            path = f"{source_dir}/{row['Filename']}"
+
+            temp = (row.get('Temperature') or '').strip()
+            state = (row.get('ScreenState') or '').strip().lower()
+
+            if temp:
+                ok.append(path)
+            elif state == 'off':
+                off.append(path)
+            elif state in ('unreadable', 'dark', 'toodark'):
+                unreadable.append(path)
+            # else: empty temp and empty/unknown state -> unlabeled -> skip
+
+    return ok, off, unreadable
+
+
+def prepare_screen_state_dataset(output_dir, csv_path=None, ok_cap=150,
+                                 augmentation_factor=10, max_factor=100, seed=42):
+    """Build the 3-class screen-state gate dataset ({ok, off, unreadable}).
+
+    Splits real source images FIRST, then augments the train split only, so no
+    augmented variant can leak into val/test (review #1). Rare classes reserve
+    real held-out samples for val/test so the gate stays measurable (review #6).
+    """
+    print("\n" + "="*80)
+    print("SCREEN-STATE GATE DATASET PREPARATION")
+    print("="*80)
+
+    ok, off, unreadable = load_screen_state_samples(csv_path)
+    print(f"\n  Source samples: ok={len(ok)}, off={len(off)}, "
+          f"unreadable={len(unreadable)}")
+
+    if not off and not unreadable:
+        print("\n  No off/unreadable samples found; skipping screen_state dataset.")
+        return
+
+    rng = random.Random(seed)
+
+    # Subsample ok to a cap to bound imbalance.
+    if len(ok) > ok_cap:
+        ok = rng.sample(ok, ok_cap)
+        print(f"  Subsampled ok to {len(ok)} (cap={ok_cap})")
+
+    def split_ok(paths):
+        """70/15/15 split of the readable class."""
+        paths = list(paths)
+        rng.shuffle(paths)
+        n = len(paths)
+        n_test = max(1, int(round(n * 0.15))) if n >= 3 else 0
+        n_val = max(1, int(round(n * 0.15))) if n >= 3 else 0
+        test = paths[:n_test]
+        val = paths[n_test:n_test + n_val]
+        train = paths[n_test + n_val:]
+        return train, val, test
+
+    def split_rare(paths):
+        """Reserve real held-out samples for rare classes (review #6).
+
+        count >= 3 -> 1 test, 1 val, rest train
+        count == 2 -> 1 train, 1 test
+        count == 1 -> train only
+        """
+        paths = list(paths)
+        rng.shuffle(paths)
+        n = len(paths)
+        if n >= 3:
+            return paths[2:], [paths[1]], [paths[0]]
+        if n == 2:
+            return [paths[0]], [], [paths[1]]
+        if n == 1:
+            return [paths[0]], [], []
+        return [], [], []
+
+    class_splits = {
+        'ok': split_ok(ok),
+        'off': split_rare(off),
+        'unreadable': split_rare(unreadable),
+    }
+
+    print("\n  Per-class splits (real images, pre-augmentation):")
+    for cls, (tr, va, te) in class_splits.items():
+        print(f"    {cls:11s}: train={len(tr)}, val={len(va)}, test={len(te)}")
+
+    # Augment the train split only. Augment rare train classes up toward
+    # parity with ok (review). Class weights in training are a second defense.
+    ok_train = class_splits['ok'][0]
+    target_total = max(1, len(ok_train) * augmentation_factor)
+    class_factor = {}
+    for cls, (tr, _va, _te) in class_splits.items():
+        if not tr:
+            class_factor[cls] = augmentation_factor
+        elif cls == 'ok':
+            class_factor[cls] = augmentation_factor
+        else:
+            factor = int(np.ceil(target_total / len(tr)))
+            class_factor[cls] = min(max(factor, augmentation_factor), max_factor)
+
+    print("\n  Train augmentation factors (toward parity):")
+    for cls, factor in class_factor.items():
+        print(f"    {cls:11s}: {factor}x")
+
+    # Reorganize into per-split class maps.
+    split_class_paths = {
+        'train': {cls: class_splits[cls][0] for cls in class_splits},
+        'val': {cls: class_splits[cls][1] for cls in class_splits},
+        'test': {cls: class_splits[cls][2] for cls in class_splits},
+    }
+
+    for split_name, class_paths in split_class_paths.items():
+        print("\n" + "-"*80)
+        print(f"Processing {split_name.upper()} split...")
+
+        split_dir = Path(output_dir) / split_name / 'screen_state'
+        stats = {'extracted': 0, 'failed': 0, 'saved': 0}
+
+        for cls, paths in class_paths.items():
+            label_dir = split_dir / cls
+            label_dir.mkdir(parents=True, exist_ok=True)
+
+            if split_name == 'train':
+                aug_types = get_augmentation_list(class_factor[cls])
+            else:
+                aug_types = ['original']
+
+            for path in paths:
+                gate_input = extract_screen_state_input(path)
+                if gate_input is None:
+                    stats['failed'] += 1
+                    print(f"    SKIP (no LCD): {path}")
+                    continue
+                stats['extracted'] += 1
+
+                base_name = Path(path).stem
+                for aug_idx, aug_type in enumerate(aug_types):
+                    if aug_type.startswith('combined:'):
+                        combo_name = aug_type.split(':', 1)[1]
+                        augmented = augment_image_combined(gate_input, combo_name)
+                    else:
+                        augmented = augment_image(gate_input, aug_type)
+
+                    save_path = label_dir / f"{base_name}_aug{aug_idx}.jpg"
+                    cv2.imwrite(str(save_path), augmented)
+                    stats['saved'] += 1
+
+        print(f"  {split_name.upper()}: extracted={stats['extracted']}, "
+              f"failed={stats['failed']}, saved={stats['saved']}")
+
+    print("\n  Screen-state dataset structure:")
+    for split in ['train', 'val', 'test']:
+        ss_dir = Path(output_dir) / split / 'screen_state'
+        if not ss_dir.exists():
+            continue
+        details = []
+        for class_dir in sorted(ss_dir.iterdir()):
+            if class_dir.is_dir():
+                details.append(f"{class_dir.name}:{len(list(class_dir.glob('*.jpg')))}")
+        print(f"    {split:5s}: [{', '.join(details)}]")
 
 
 def augment_image(img, augmentation_type):
@@ -519,6 +704,12 @@ def prepare_dataset(output_dir=None, augmentation_factor=10, csv_path=None):
         print(f"    Extracted: {stats['extracted']}/{len(split_samples)}")
         print(f"    Failed: {stats['failed']}")
         print(f"    Total augmented samples saved: {stats['augmented']}")
+
+    # Build the screen-state gate dataset (guarded: only if off/unreadable
+    # samples exist). Uses the same CSV and base augmentation factor.
+    prepare_screen_state_dataset(
+        output_dir, csv_path=csv_path, augmentation_factor=augmentation_factor
+    )
 
     print("\n" + "="*80)
     print("DATASET PREPARATION COMPLETE")

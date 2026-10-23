@@ -99,6 +99,7 @@ curl -X POST http://monitoring.local/api/events \
 
 ```json
 {
+  "screenState": "ok",
   "temperature": 45,
   "isGasBurning": true,
   "isHeating": true,
@@ -109,7 +110,8 @@ curl -X POST http://monitoring.local/api/events \
 ```
 
 **Field Descriptions:**
-- `temperature`: Integer (degrees Celsius)
+- `screenState`: String - `ok` (normal reading), `off` (screen blank/standby), or `unreadable` (too dark/blur/glare/corrupt)
+- `temperature`: Integer (degrees Celsius), or `null` when `screenState` is `off`/`unreadable`
 - `isGasBurning`: Boolean - Burn/flame icon state
 - `isHeating`: Boolean - Heating radiator icon state
 - `isHotWater`: Boolean - Hot water faucet icon state
@@ -117,6 +119,30 @@ curl -X POST http://monitoring.local/api/events \
 - `isGasValveOpened`: Boolean - Gas valve icon state
 
 **Exit Code:** 0
+
+### Screen Off / Unreadable Response
+
+When the optional screen-state gate model is loaded and detects a blank or unreadable
+screen, the wrapper returns a **success** result (exit code 0) with `screenState` set and
+`temperature: null` — not an error:
+
+```json
+{
+  "screenState": "off",
+  "temperature": null,
+  "isGasBurning": false,
+  "isHeating": false,
+  "isHotWater": false,
+  "isInternalPumpRunning": false,
+  "isGasValveOpened": false
+}
+```
+
+> **Contract change (additive):** the `screenState` field is new and always present on
+> success. Consumers that parse `temperature` must tolerate `null` when
+> `screenState` is `off`/`unreadable`. Until the gate model (`screen_state_mlp.pkl`)
+> exists, `screenState` is always `ok` and `temperature` is always an integer on success,
+> so existing integrations keep working.
 
 ### Error Response
 

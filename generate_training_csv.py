@@ -19,7 +19,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 
-HEADER = "Filename;Temperature;Burn;Heating;HotWater;InternalPump;GasValve;\n"
+HEADER = "Filename;Temperature;Burn;Heating;HotWater;InternalPump;GasValve;SourceDir;ScreenState\n"
 ICON_KEYS = ['burn', 'heating', 'hotwater', 'pump', 'gasvalve']
 
 
@@ -38,19 +38,31 @@ def parse_temperature(temp_value):
     return ""
 
 
-def result_to_row(filename, result):
-    """Convert an LCDReaderDL result dict to a CSV row string."""
+def result_to_row(filename, result, source_label):
+    """Convert an LCDReaderDL result dict to a CSV row string.
+
+    Gate-aware: when the screen-state gate reports off/unreadable, leave
+    Temperature + icons blank and fill ScreenState. For a normal ('ok') or
+    gate-less reading, fill Temperature + icons; ScreenState carries the gate's
+    prediction when available, otherwise empty for the human to fill.
+    """
+    screen_state = result.get('screen_state')
+
+    if screen_state in ('off', 'unreadable'):
+        return f"{filename};;;;;;;{source_label};{screen_state}\n"
+
     temp = parse_temperature(result.get('temperature'))
     icons = []
     for key in ICON_KEYS:
-        state = result.get(key, {}).get('state', False)
+        state = (result.get(key) or {}).get('state', False)
         icons.append("true" if state else "false")
-    return f"{filename};{temp};{';'.join(icons)};\n"
+    state_str = screen_state or ''
+    return f"{filename};{temp};{';'.join(icons)};{source_label};{state_str}\n"
 
 
-def empty_row(filename):
-    """Return a CSV row with empty fields for a failed image."""
-    return f"{filename};;;;;;\n"
+def empty_row(filename, source_label):
+    """Return a CSV row with empty reading fields for a failed image."""
+    return f"{filename};;;;;;;{source_label};\n"
 
 
 def main():
@@ -67,12 +79,20 @@ def main():
         default=None,
         help='Output CSV path (default: training_set_v2.csv in source dir)'
     )
+    parser.add_argument(
+        '--source-label',
+        default=None,
+        help='Value for the SourceDir column (default: source dir name). '
+             'Used to keep merges into training_set_v3.csv clean.'
+    )
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir)
     if not source_dir.is_dir():
         print(f"Error: source directory does not exist: {source_dir}", file=sys.stderr)
         sys.exit(1)
+
+    source_label = args.source_label if args.source_label else source_dir.name
 
     output_path = Path(args.output) if args.output else source_dir / 'training_set_v2.csv'
 
@@ -119,11 +139,11 @@ def main():
                 if not result.get('success', False):
                     raise ValueError(result.get('error', 'recognition failed'))
 
-                out.write(result_to_row(basename, result))
+                out.write(result_to_row(basename, result, source_label))
                 success_count += 1
             except Exception as e:
                 print(f"WARNING: failed on {basename}: {e}", file=sys.stderr)
-                out.write(empty_row(basename))
+                out.write(empty_row(basename, source_label))
                 fail_count += 1
 
     total = success_count + fail_count

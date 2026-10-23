@@ -67,6 +67,21 @@ def transform_result(lcd_result, filename):
             context={"lcd_reader_error": error_msg}
         )
 
+    # Screen off / unreadable: a successful detection of a non-readable state.
+    # Emit a success JSON with screenState set and temperature null instead of
+    # treating the missing reading as an error.
+    screen_state = lcd_result.get('screen_state')
+    if screen_state in ('off', 'unreadable'):
+        return {
+            "screenState": screen_state,
+            "temperature": None,
+            "isGasBurning": False,
+            "isHeating": False,
+            "isHotWater": False,
+            "isInternalPumpRunning": False,
+            "isGasValveOpened": False
+        }
+
     # Parse temperature
     temperature = parse_temperature(lcd_result.get('temperature'))
     if temperature is None:
@@ -80,6 +95,7 @@ def transform_result(lcd_result, filename):
     # Extract boolean states
     try:
         motion_result = {
+            "screenState": lcd_result.get('screen_state', 'ok'),
             "temperature": temperature,
             "isGasBurning": lcd_result.get('burn', {}).get('state', False),
             "isHeating": lcd_result.get('heating', {}).get('state', False),

@@ -9,6 +9,28 @@ import cv2
 import numpy as np
 from typing import Dict, Optional
 
+SCREEN_STATE_SIZE = (64, 64)  # (w, h); low on purpose — see decision 3 / review #7
+
+
+def screen_state_input_from_roi(roi):
+    """Build the fixed-size grayscale gate input from an already-detected LCD
+    crop. Returns None when roi is None (caller -> 'unreadable')."""
+    if roi is None:
+        return None
+    if roi.ndim == 3:
+        roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(roi, SCREEN_STATE_SIZE, interpolation=cv2.INTER_AREA)
+
+
+def extract_screen_state_input(image_path):
+    """Convenience wrapper for dataset prep: detect the LCD then build gate
+    input. None for pitch-black/unreadable files (-> 'unreadable')."""
+    try:
+        return screen_state_input_from_roi(find_display_region(image_path))
+    except Exception:
+        return None
+
+
 def _score_contour_candidates(contours, img_h, img_w, gray_img):
     """Score contour candidates using relative geometry and contrast.
 
@@ -152,13 +174,18 @@ def find_display_region(image_path):
     return display_roi
 
 
-def extract_all_regions(image_path: str, visualize: bool = False) -> Optional[Dict[str, np.ndarray]]:
+def extract_all_regions(image_path: str, visualize: bool = False,
+                        display_roi: Optional[np.ndarray] = None) -> Optional[Dict[str, np.ndarray]]:
     """
     Extract all 7 classification regions from LCD display.
 
     Args:
         image_path: Path to input image
         visualize: If True, save visualization images
+        display_roi: Pre-detected LCD crop. When provided, skips the
+            find_display_region() call (and its extracted_display.jpg write)
+            so inference can share one detection between the gate and region
+            extraction. Default None preserves current callers.
 
     Returns:
         Dictionary with 7 regions:
@@ -174,11 +201,12 @@ def extract_all_regions(image_path: str, visualize: bool = False) -> Optional[Di
 
         Returns None if display extraction fails.
     """
-    try:
-        display_roi = find_display_region(image_path)
-    except Exception as e:
-        print(f"Failed to extract display: {e}")
-        return None
+    if display_roi is None:
+        try:
+            display_roi = find_display_region(image_path)
+        except Exception as e:
+            print(f"Failed to extract display: {e}")
+            return None
 
     if display_roi is None:
         return None
