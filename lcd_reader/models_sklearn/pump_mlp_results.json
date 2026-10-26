@@ -1,22 +1,22 @@
 {
   "task": "pump",
-  "train_acc": 0.9990413804122065,
-  "val_acc": 0.9871794871794872,
-  "test_acc": 1.0,
+  "train_acc": 0.9999622099614541,
+  "val_acc": 0.9961240310077519,
+  "test_acc": 0.9959677419354839,
   "num_classes": 2,
   "class_names": [
     0,
     1
   ],
-  "train_samples": 18777,
-  "val_samples": 156,
-  "test_samples": 151,
+  "train_samples": 26462,
+  "val_samples": 258,
+  "test_samples": 248,
   "class_distribution": {
-    "0": 2557,
-    "1": 16220
+    "0": 3115,
+    "1": 23347
   },
   "class_weights": {
-    "0": 3.6716855690262027,
-    "1": 0.5788224414303329
+    "0": 4.247512038523275,
+    "1": 0.5667109264573607
   }
 }

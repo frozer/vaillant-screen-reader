@@ -1,22 +1,22 @@
 {
   "task": "heating",
   "train_acc": 1.0,
-  "val_acc": 0.9871794871794872,
-  "test_acc": 1.0,
+  "val_acc": 0.9961240310077519,
+  "test_acc": 0.9959677419354839,
   "num_classes": 2,
   "class_names": [
     0,
     1
   ],
-  "train_samples": 18777,
-  "val_samples": 156,
-  "test_samples": 151,
+  "train_samples": 26462,
+  "val_samples": 258,
+  "test_samples": 248,
   "class_distribution": {
-    "0": 2957,
-    "1": 15820
+    "0": 3491,
+    "1": 22971
   },
   "class_weights": {
-    "0": 3.175008454514711,
-    "1": 0.5934576485461441
+    "0": 3.7900315095961044,
+    "1": 0.5759871141874537
   }
 }

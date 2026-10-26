@@ -1,22 +1,22 @@
 {
   "task": "hotwater",
-  "train_acc": 0.9997869734249347,
-  "val_acc": 0.9871794871794872,
-  "test_acc": 0.9933774834437086,
+  "train_acc": 1.0,
+  "val_acc": 0.9922480620155039,
+  "test_acc": 0.9919354838709677,
   "num_classes": 2,
   "class_names": [
     0,
     1
   ],
-  "train_samples": 18777,
-  "val_samples": 156,
-  "test_samples": 151,
+  "train_samples": 26462,
+  "val_samples": 258,
+  "test_samples": 248,
   "class_distribution": {
-    "0": 10297,
-    "1": 8480
+    "0": 15210,
+    "1": 11252
   },
   "class_weights": {
-    "0": 0.9117704185685152,
-    "1": 1.1071344339622642
+    "0": 0.8698882314266929,
+    "1": 1.175879843583363
   }
 }
