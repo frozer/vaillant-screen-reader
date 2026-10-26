@@ -5,11 +5,58 @@ Complete LCD segmentation for all 7 classification tasks:
 - 5 status icons (1 in Row 1, 4 in Row 2)
 """
 
+import json
+import re
+from functools import lru_cache
+from pathlib import Path
+
 import cv2
 import numpy as np
 from typing import Dict, Optional
 
 SCREEN_STATE_SIZE = (64, 64)  # (w, h); low on purpose — see decision 3 / review #7
+CAMERA_POSITIONS_PATH = Path(__file__).with_name('camera_positions.json')
+_SNAPSHOT_DATE = re.compile(r'(\d{4})(\d{2})(\d{2})\d{6}')
+
+
+@lru_cache(maxsize=None)
+def _load_camera_positions(path=CAMERA_POSITIONS_PATH):
+    """Calibrated camera positions sorted by 'since' (empty if no file)."""
+    try:
+        with open(path, encoding='utf-8') as f:
+            positions = json.load(f).get('positions', [])
+    except FileNotFoundError:
+        return ()
+    return tuple(sorted(positions, key=lambda p: p['since']))
+
+
+def calibrated_lcd_box(image_path, img_w, img_h, positions=None):
+    """Return the calibrated (x, y, w, h) LCD box for this snapshot, or None.
+
+    The camera position is chosen by the snapshot date in the filename
+    (YYYYMMDDhhmmss): the last position whose 'since' is <= that date. Files
+    without a date use the latest position (the current camera); snapshots
+    older than every position return None so edge detection is used.
+    """
+    if positions is None:
+        positions = _load_camera_positions()
+    if not positions:
+        return None
+
+    match = _SNAPSHOT_DATE.search(Path(str(image_path)).name)
+    if match:
+        date = '-'.join(match.groups())
+        eligible = [p for p in positions if p['since'] <= date]
+        if not eligible:
+            return None
+        position = eligible[-1]
+    else:
+        position = positions[-1]
+
+    ref_w, ref_h = position.get('image_size', (img_w, img_h))
+    sx, sy = img_w / ref_w, img_h / ref_h
+    x, y, w, h = position['lcd_box']
+    return int(round(x * sx)), int(round(y * sy)), int(round(w * sx)), int(round(h * sy))
 
 
 def screen_state_input_from_roi(roi):
@@ -122,9 +169,12 @@ def _extract_best(candidates, img):
 
 
 def find_display_region(image_path):
-    """Find and extract the LCD display region using edge detection with
-    relative thresholds, CLAHE enhancement, contrast scoring, and
-    expected-position fallback.
+    """Find and extract the LCD display region.
+
+    Uses the calibrated box from camera_positions.json when one applies to the
+    snapshot (see calibrated_lcd_box); otherwise edge detection with relative
+    thresholds, CLAHE enhancement, contrast scoring, and expected-position
+    fallback.
 
     Returns:
         numpy.ndarray: Cropped display region, or None if not found.
@@ -139,6 +189,14 @@ def find_display_region(image_path):
     # Early exit for completely dark images (LCD off / camera in dark)
     if gray.mean() < 10:
         return None
+
+    # --- Calibrated camera position ---
+    box = calibrated_lcd_box(image_path, img_w, img_h)
+    if box is not None:
+        x, y, w, h = box
+        display_roi = img[y:y+h, x:x+w]
+        cv2.imwrite('extracted_display.jpg', display_roi)
+        return display_roi
 
     # --- Collect candidates from both standard and CLAHE edge detection ---
     all_candidates = []

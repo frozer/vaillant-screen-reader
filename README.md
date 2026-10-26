@@ -204,6 +204,17 @@ the screen state: empty or `ok` = a normal reading, `off` = screen blank/standby
 icon columns blank. If the gate model exists it fills `ScreenState` automatically; otherwise
 fill it by hand. Manually verify the CSV, then merge into `source_data/training_set_v3.csv`.
 
+**1b. Review labels in the browser** *(optional, faster)*
+```bash
+python -m markup_helper.api.main --source-dir path/to/new/images --labels new_labels.csv
+```
+Shows each image next to a prefilled form. Confirm, mark too dark/off, or fix each row.
+The results go to `new_labels.reviewed.csv`. Merge them into the training set with:
+```bash
+python -m markup_helper.merge_reviewed --reviewed new_labels.reviewed.csv --source-dir source_data/<folder> --dry-run
+```
+Drop `--dry-run` to write the file. See [markup_helper/README.md](markup_helper/README.md).
+
 **2. Regenerate the dataset**
 ```bash
 python research/prepare_full_dataset.py
@@ -239,7 +250,7 @@ Training takes ~25 minutes for all 7 tasks on CPU. See [lcd_reader/README.md](lc
 - **Icon bias**: Heating and Pump icons are always ON in training data (no OFF examples exist)
 - **Rare digits**: Some digit classes have very few training samples and may be confused with similar digits
 - **Dark images**: ~30% of camera snapshots are pitch-black (LCD off / camera in dark) and are automatically rejected. With the screen-state gate loaded these (and blank/blurry/glare frames) are instead reported as `off`/`unreadable`
-- **Display detection**: Requires the LCD border to be visible for edge-based detection; falls back to expected-position crop otherwise
+- **Display detection**: Requires the LCD border to be visible for edge-based detection; falls back to expected-position crop otherwise. After the camera is moved, add the new LCD box to `lcd_reader/camera_positions.json` (applies to snapshots from its `since` date on)
 
 ## License
 

@@ -10,6 +10,7 @@ import csv
 import os
 import sys
 import random
+import shutil
 from pathlib import Path
 
 # Add project root and lcd_reader/ to path for imports
@@ -97,6 +98,24 @@ def load_screen_state_samples(csv_path=None):
     return ok, off, unreadable
 
 
+TASKS = ['digit1', 'digit2', 'burn', 'heating', 'hotwater', 'pump', 'gasvalve']
+SPLITS = ['train', 'val', 'test']
+
+
+def clear_task_dirs(output_dir, tasks):
+    """Remove {split}/{task} folders left by a previous build.
+
+    Image names don't encode the split, so crops from an older build (with a
+    different split) would otherwise stay behind and leak into val/test.
+    Only the given task folders are removed, never output_dir itself.
+    """
+    for split in SPLITS:
+        for task in tasks:
+            task_dir = Path(output_dir) / split / task
+            if task_dir.exists():
+                shutil.rmtree(task_dir)
+
+
 def prepare_screen_state_dataset(output_dir, csv_path=None, ok_cap=150,
                                  augmentation_factor=10, max_factor=100, seed=42):
     """Build the 3-class screen-state gate dataset ({ok, off, unreadable}).
@@ -112,6 +131,9 @@ def prepare_screen_state_dataset(output_dir, csv_path=None, ok_cap=150,
     ok, off, unreadable = load_screen_state_samples(csv_path)
     print(f"\n  Source samples: ok={len(ok)}, off={len(off)}, "
           f"unreadable={len(unreadable)}")
+
+    # Cleared even when skipping, so a stale gate dataset isn't trained.
+    clear_task_dirs(output_dir, ['screen_state'])
 
     if not off and not unreadable:
         print("\n  No off/unreadable samples found; skipping screen_state dataset.")
@@ -621,6 +643,8 @@ def prepare_dataset(output_dir=None, augmentation_factor=10, csv_path=None):
     for factor, count in sorted(factor_dist.items()):
         print(f"    {factor}x augmentation: {count} samples")
 
+    clear_task_dirs(output_dir, TASKS)
+
     # Process each split
     for split_name, split_samples in [('train', train_samples),
                                        ('val', val_samples),
@@ -632,7 +656,7 @@ def prepare_dataset(output_dir=None, augmentation_factor=10, csv_path=None):
 
         # Create output directories
         split_dir = Path(output_dir) / split_name
-        for task in ['digit1', 'digit2', 'burn', 'heating', 'hotwater', 'pump', 'gasvalve']:
+        for task in TASKS:
             task_dir = split_dir / task
             task_dir.mkdir(parents=True, exist_ok=True)
 
@@ -720,7 +744,7 @@ def prepare_dataset(output_dir=None, augmentation_factor=10, csv_path=None):
     for split in ['train', 'val', 'test']:
         print(f"\n  {split}/")
         split_dir = Path(output_dir) / split
-        for task in ['digit1', 'digit2', 'burn', 'heating', 'hotwater', 'pump', 'gasvalve']:
+        for task in TASKS:
             task_dir = split_dir / task
             if task_dir.exists():
                 # Count samples per class

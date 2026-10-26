@@ -28,7 +28,7 @@ pip install -r requirements.txt
 **Location**: `lcd_reader/` directory
 
 1. **LCD Segmentation** (`lcd_segmentation_full.py`)
-   - `find_display_region()`: Locates LCD using dual edge detection (standard Canny + CLAHE-enhanced Canny), multi-criteria scoring (size, aspect ratio, position, contrast), edge-touching rejection, IoU deduplication, and expected-position fallback
+   - `find_display_region()`: First checks `camera_positions.json` (calibrated LCD box per camera position, chosen by the snapshot date in the filename; undated files use the latest position, snapshots older than every position use detection — see `calibrated_lcd_box()`). Otherwise locates LCD using dual edge detection (standard Canny + CLAHE-enhanced Canny), multi-criteria scoring (size, aspect ratio, position, contrast), edge-touching rejection, IoU deduplication, and expected-position fallback
    - `extract_all_regions(image_path, visualize=False, display_roi=None)`: Extracts 7 regions from the detected LCD using percentage-based layout. Pass `display_roi` to reuse an already-detected LCD crop (skips a second detection)
    - Regions: digit1 (tens), digit2 (ones), burn, heating, hotwater, pump, gasvalve
    - Returns preprocessed images (60x100px for digits, 60x60px for icons)
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 
 3. **Training Pipeline** (`train_sklearn.py`)
    - Trains individual models per task (digit1, digit2, 5 icons)
-   - `load_dataset()` supports string class folder names, so the gate trains with `ok`/`off`/`unreadable` labels
+   - `load_dataset()` supports string class folder names, so the gate trains with `ok`/`off`/`unreadable` labels. String labels are fitted as integer codes and mapped back with `relabel_classes()` (sklearn's early stopping can't score string labels), so the saved gate still predicts names
    - `train_all_tasks()` appends `screen_state` to the task list only if `train/screen_state/` exists in the dataset
    - Uses class weighting for imbalance
    - Augmentation: 10 single types + 10 combined multi-transforms for rare classes
@@ -73,6 +73,9 @@ python motion_reader.py --filename path/to/image.jpg
 
 # Full test suite
 python research/test_on_original_images.py
+
+# Unit tests (camera positions, gate training, dataset build, markup helper)
+python -m pytest lcd_reader/tests markup_helper/api/tests -q
 ```
 
 ### Retraining
@@ -88,13 +91,31 @@ fills it automatically once `screen_state_mlp.pkl` exists; otherwise fill it by 
 `--source-label` to set the `SourceDir` value for clean merges. Verify CSV output, then
 merge into `source_data/training_set_v3.csv`.
 
+**Step 1b: Review labels** (see `markup_helper/README.md`)
+```bash
+python -m markup_helper.api.main --source-dir path/to/new/images --labels new_labels.csv
+```
+Browser review tool (FastAPI + React, http://127.0.0.1:8000 after `npm run build` in
+`markup_helper/webapp`). Writes `new_labels.reviewed.csv`: the input columns with final values,
+followed by `too_dark;confirmed;retrainNeeded` (`retrainNeeded` = `Col:recognized>corrected|...`).
+Rows where the generator failed are treated as recognized "too dark". Burn ↔ GasValve are coupled
+in the form. Then merge the reviewed rows into the training set:
+```bash
+python -m markup_helper.merge_reviewed --reviewed new_labels.reviewed.csv --source-dir source_data/<folder> [--fix] [--dry-run]
+```
+It skips pending rows, drops the review columns, adds `ScreenState` to the training-set header,
+checks that every image resolves, refuses conflicting duplicates, and keeps a `.bak-<timestamp>`.
+`unreadable`/`off` rows turn on the gate dataset in Step 2.
+
 **Step 2: Regenerate dataset**
 ```bash
 python research/prepare_full_dataset.py
 ```
 Builds the 7 task datasets **and** the `screen_state` gate dataset (the latter only if any
 `off`/`unreadable` rows exist). The gate dataset splits real source images first and
-augments only the train split, so no augmented variant leaks into val/test.
+augments only the train split, so no augmented variant leaks into val/test. Each run first
+deletes the `{train,val,test}/<task>` folders it writes (only those), so crops from an earlier
+build with a different split can't leak into val/test.
 
 **Step 3: Train**
 ```bash
@@ -147,7 +168,7 @@ Training takes ~25 minutes for the 7 tasks on CPU (the gate adds a small amount)
 
 1. **Temperature range**: Trained on 42-81 C, may fail outside this range
 2. **Icon bias**: Heating and Pump are always ON in training data (no OFF examples exist)
-3. **Display detection**: Pitch-black images (LCD off / camera in dark) return None; camera angle shifts can cause fallback to expected-position crop
+3. **Display detection**: Pitch-black images (LCD off / camera in dark) return None. Edge detection only works for the original framing; when the camera moves, add a new entry to `lcd_reader/camera_positions.json` (`since` date + `lcd_box` framing the LCD window), otherwise the detector silently crops something else (in 2026-10 it cropped the control knob)
 4. **Rare digit classes**: Some digit values have very few training samples; model may confuse visually similar digits
 5. **Screen-state gate data**: starts thin — few `off`/`unreadable` examples exist; `off` vs `ok` (both lit) is the hardest case. The gate is optional and absent until labeled + trained
 
