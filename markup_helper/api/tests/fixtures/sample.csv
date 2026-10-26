@@ -1,0 +1,9 @@
+Filename;Temperature;Burn;Heating;HotWater;InternalPump;GasValve;SourceDir;ScreenState
+cam01-snapshot-20261021231623.jpg;;;;;;;2026-10-25;
+cam01-snapshot-20261022074502.jpg;37;false;true;false;false;false;2026-10-25;
+cam01-snapshot-20261022173016.jpg;;;;;;;2026-10-25;
+cam01-snapshot-20261022173016.jpg;;;;;;;2026-10-25;
+cam01-snapshot-20261023160058.jpg;40;true;true;false;true;true;2026-10-25;;
+cam01-snapshot-20261023194502.jpg;54;false;false;true;true;true;2026-10-25;
+cam01-snapshot-20261023231516.jpg;35;true;false;true;true;false;2026-10-25;
+cam01-snapshot-20990101000000.jpg;;;;;;;2026-10-25;off

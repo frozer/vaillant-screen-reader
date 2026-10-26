@@ -12,7 +12,11 @@ from typing import Dict, Optional, Tuple
 import json
 import cv2
 
-from lcd_segmentation_full import extract_all_regions
+from lcd_segmentation_full import (
+    extract_all_regions,
+    find_display_region,
+    screen_state_input_from_roi,
+)
 
 
 class LCDReaderDL:
@@ -54,6 +58,10 @@ class LCDReaderDL:
             'gasvalve': {'type': 'icon', 'classes': 2}
         }
 
+        # Optional 3-class screen-state gate ({ok, off, unreadable}).
+        # Loaded only if present; until it exists, behavior is unchanged.
+        self.screen_state_model = None
+
         # Load all models
         self._load_models()
 
@@ -81,12 +89,25 @@ class LCDReaderDL:
 
         print(f"\nAll {len(self.models)} models loaded successfully\n")
 
-    def validate_image(self, image_path: str) -> Dict[str, any]:
+        # Optionally load the screen-state gate model.
+        gate_path = self.model_dir / 'screen_state_mlp.pkl'
+        if gate_path.exists():
+            with open(gate_path, 'rb') as f:
+                self.screen_state_model = pickle.load(f)
+            print("  Loaded screen_state gate: 3 classes (ok/off/unreadable)\n")
+
+    def validate_image(self, image_path: str,
+                       enforce_dark_floor: bool = True) -> Dict[str, any]:
         """
         Validate image quality before processing
 
         Args:
             image_path: Path to image file
+            enforce_dark_floor: When True (default, no gate loaded), reject
+                too-dark / no-contrast images here as before. When False, the
+                screen-state gate is the single owner of "dark/blank", so these
+                two rejections are dropped; too-bright, too-small, and
+                unreadable-file checks still apply.
 
         Returns:
             Dictionary with validation results:
@@ -129,16 +150,16 @@ class LCDReaderDL:
             # Validation checks
             issues = []
 
-            # Check 1: Too dark (black image)
-            if mean_brightness < self.min_brightness:
+            # Check 1: Too dark (black image) — owned by the gate when loaded
+            if enforce_dark_floor and mean_brightness < self.min_brightness:
                 issues.append(f"Image too dark (mean={mean_brightness:.1f} < {self.min_brightness})")
 
             # Check 2: Too bright (white/overexposed)
             if mean_brightness > self.max_brightness:
                 issues.append(f"Image too bright (mean={mean_brightness:.1f} > {self.max_brightness})")
 
-            # Check 3: No contrast (uniform image)
-            if std_dev < self.min_std:
+            # Check 3: No contrast (uniform image) — owned by the gate when loaded
+            if enforce_dark_floor and std_dev < self.min_std:
                 issues.append(f"No contrast (std={std_dev:.1f} < {self.min_std})")
 
             # Check 4: Image too small
@@ -227,6 +248,32 @@ class LCDReaderDL:
 
         return bool(prediction == 1), float(confidence)
 
+    def _predict_screen_state(self, roi) -> Tuple[str, float]:
+        """Predict the screen state from an LCD crop, mirroring the trainer's
+        preprocessing exactly (normalize /255, flatten, reshape to (1, N))."""
+        gi = screen_state_input_from_roi(roi)  # 64x64 uint8, or None
+        if gi is None:
+            return 'unreadable', 1.0
+        X = (gi.astype(np.float32) / 255.0).reshape(1, -1)  # (1, 4096)
+        state = self.screen_state_model.predict(X)[0]
+        conf = float(self.screen_state_model.predict_proba(X)[0].max())
+        return str(state), conf
+
+    @staticmethod
+    def _screen_state_result(state: str, confidence: float) -> Dict:
+        """Build the short-circuit result for an off/unreadable screen."""
+        result = {
+            'success': True,
+            'screen_state': state,
+            'confidence': confidence,
+            'temperature': None,
+            'digit1': None,
+            'digit2': None,
+        }
+        for icon_name in ['burn', 'heating', 'hotwater', 'pump', 'gasvalve']:
+            result[icon_name] = None
+        return result
+
     def read_lcd(self, image_path: str, visualize: bool = False,
                  skip_validation: bool = False) -> Optional[Dict]:
         """
@@ -260,9 +307,35 @@ class LCDReaderDL:
                 'details': {...}
             }
         """
-        # Stage 1: Validate image quality
+        # When the gate is loaded, it owns "dark/blank" detection and decides
+        # off/unreadable before the 7 task models run.
+        gate_active = self.screen_state_model is not None
+        display_roi = None
+
+        if gate_active:
+            # Stage 1: cheap file-readable check (cannot read -> error).
+            if cv2.imread(image_path) is None:
+                return {
+                    'success': False,
+                    'error': f'Cannot read image file: {image_path}',
+                    'error_type': 'validation_failed',
+                    'details': {'stage': 'image_validation', 'metrics': {}}
+                }
+
+            # Stage 2: detect the LCD once (shared with region extraction).
+            display_roi = find_display_region(image_path)
+
+            # Stage 3: gate. None (pitch-black/unreadable) -> unreadable.
+            state, conf = self._predict_screen_state(display_roi)
+            if state != 'ok':
+                return self._screen_state_result(state, conf)
+
+        # Stage 4 (or stage 1 without a gate): validate image quality.
+        # With the gate loaded, the dark floor is disabled — the gate owns it.
         if not skip_validation:
-            validation = self.validate_image(image_path)
+            validation = self.validate_image(
+                image_path, enforce_dark_floor=not gate_active
+            )
             if not validation['valid']:
                 return {
                     'success': False,
@@ -276,8 +349,9 @@ class LCDReaderDL:
         else:
             validation = {'valid': True, 'reason': 'Validation skipped'}
 
-        # Stage 2: Extract all regions
-        regions = extract_all_regions(image_path, visualize=visualize)
+        # Stage 5: Extract all regions (reuse the gate's LCD detection if any).
+        regions = extract_all_regions(image_path, visualize=visualize,
+                                      display_roi=display_roi)
 
         if regions is None:
             return {
@@ -288,6 +362,8 @@ class LCDReaderDL:
 
         # Initialize result
         result = {'success': True}
+        if gate_active:
+            result['screen_state'] = 'ok'
 
         # Predict digit1
         digit1_val, digit1_conf = self.predict_digit(regions['digit1'], 'digit1')
@@ -344,6 +420,21 @@ class LCDReaderDL:
                     h, w = metrics['shape']
                     lines.append(f"  Resolution: {w}x{h}")
 
+            lines.append("=" * 60)
+            return "\n".join(lines)
+
+        # Off / unreadable screen: render a status block, not a reading table.
+        screen_state = result.get('screen_state')
+        if screen_state in ('off', 'unreadable'):
+            label = 'SCREEN OFF' if screen_state == 'off' else 'UNREADABLE IMAGE'
+            conf = result.get('confidence', 0.0)
+            lines = []
+            lines.append("=" * 60)
+            lines.append("LCD READING RESULT (Deep Learning)")
+            lines.append("=" * 60)
+            lines.append(f"\nScreen State: {label}")
+            lines.append(f"  Detected as: {screen_state} (confidence: {conf:.2%})")
+            lines.append("  Temperature: -- (no reading available)")
             lines.append("=" * 60)
             return "\n".join(lines)
 

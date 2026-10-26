@@ -1,6 +1,6 @@
 {
   "task": "gasvalve",
-  "train_acc": 1.0,
+  "train_acc": 0.9994331494218124,
   "val_acc": 1.0,
   "test_acc": 1.0,
   "num_classes": 2,
@@ -8,15 +8,15 @@
     0,
     1
   ],
-  "train_samples": 14299,
-  "val_samples": 93,
-  "test_samples": 94,
+  "train_samples": 26462,
+  "val_samples": 258,
+  "test_samples": 248,
   "class_distribution": {
-    "0": 183,
-    "1": 14116
+    "0": 5646,
+    "1": 20816
   },
   "class_weights": {
-    "0": 39.068306010928964,
-    "1": 0.5064820062340606
+    "0": 2.343428976266383,
+    "1": 0.6356168332052268
   }
 }

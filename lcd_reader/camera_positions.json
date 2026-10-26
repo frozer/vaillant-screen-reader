@@ -1,0 +1,11 @@
+{
+  "_comment": "Calibrated LCD boxes per camera position. find_display_region() uses the last entry whose 'since' date is <= the snapshot date in the filename (cam01-snapshot-YYYYMMDDhhmmss.jpg); filenames without a date use the last entry (the current camera). Snapshots older than the first entry fall back to edge detection. lcd_box is [x, y, w, h] in pixels of image_size and frames the LCD window the way the edge detector does on older snapshots.",
+  "positions": [
+    {
+      "name": "2026-10 reframed (camera further back, LCD upper-centre)",
+      "since": "2026-10-21",
+      "image_size": [640, 480],
+      "lcd_box": [316, 180, 110, 63]
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import numpy as np
 from pathlib import Path
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.preprocessing import LabelBinarizer
 from collections import Counter
 import pickle
 import json
@@ -34,7 +35,11 @@ def load_dataset(root_dir, task_name):
         if not class_dir.is_dir():
             continue
 
-        class_label = int(class_dir.name)
+        name = class_dir.name
+        try:
+            class_label = int(name)
+        except ValueError:
+            class_label = name  # string label (e.g. screen_state: ok/off/unreadable)
         if class_label not in class_names:
             class_names.append(class_label)
 
@@ -69,6 +74,18 @@ def calculate_class_weights(y, class_names):
         weights[class_label] = total / (len(class_names) * count)
 
     return weights
+
+
+def relabel_classes(model, class_names):
+    """Make a model fitted on integer codes predict the string class names.
+
+    The codes index into the sorted class_names, so the names stay in the
+    same order as the codes the model saw.
+    """
+    names = np.array([class_names[code] for code in model.classes_])
+    binarizer = LabelBinarizer().fit(names)
+    model._label_binarizer = binarizer
+    model.classes_ = binarizer.classes_
 
 
 def train_task_sklearn(task_name, dataset_root='dataset', output_dir='models_sklearn'):
@@ -147,7 +164,15 @@ def train_task_sklearn(task_name, dataset_root='dataset', output_dir='models_skl
     print("TRAINING")
     print("="*80)
 
-    model.fit(X_train, y_train, sample_weight=sample_weights)
+    string_labels = any(isinstance(c, str) for c in class_names)
+    if string_labels:
+        # sklearn's early stopping scores with np.isnan on predicted labels,
+        # which fails for strings: fit on integer codes, then map back.
+        y_codes = np.array([class_names.index(label) for label in y_train])
+        model.fit(X_train, y_codes, sample_weight=sample_weights)
+        relabel_classes(model, class_names)
+    else:
+        model.fit(X_train, y_train, sample_weight=sample_weights)
 
     # Evaluate on training set
     y_train_pred = model.predict(X_train)
@@ -213,6 +238,11 @@ def train_all_tasks(dataset_root='dataset', output_dir='models_sklearn'):
     """Train all 7 tasks"""
 
     tasks = ['digit1', 'digit2', 'burn', 'heating', 'hotwater', 'pump', 'gasvalve']
+
+    # Train the optional screen-state gate only if its dataset exists, so
+    # older datasets without it still train cleanly.
+    if (Path(dataset_root) / 'train' / 'screen_state').exists():
+        tasks.append('screen_state')
 
     all_results = {}
 
